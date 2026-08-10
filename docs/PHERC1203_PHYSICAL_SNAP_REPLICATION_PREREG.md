@@ -3,6 +3,15 @@
 Status: **frozen before any PHerc1203 voxel, label chunk, mesh, or local
 outcome was read** at 2026-08-10T15:38:13+01:00 (Africa/Casablanca).
 
+Pre-access amendment 1: **frozen at 2026-08-10T15:54:31+01:00, still before
+any PHerc1203 voxel, label chunk, mesh, or local outcome was read**. A
+skeptical review identified five material weaknesses in the first scorer:
+the lack of the reference evaluator's shifted null, arm-dependent attrition,
+an IID bootstrap on one contiguous slab, an effect floor below registration
+error, and no separation of `boundary_poor` tissue. The amended metric below
+supersedes those parts of the first freeze. Git history preserves the original
+protocol and scorer; no outcome was available when this correction was made.
+
 Before this freeze, only public catalog/Zarr metadata, the physical-audit
 README and source code, and its already published whole-scroll aggregate
 numbers had been inspected. The `labels1203_L1.tar` asset had not been
@@ -36,6 +45,10 @@ registration median is 2.38 um. Claims must retain that limitation.
 
 - Candidate implementation: ScrollFiesta PR #11 exact public head
   `4777630e5c81111684d156ef4ffdb5964cedc57d`.
+- The original pre-access protocol is public at `7726035`; the first scorer is
+  public at `b9c495a`. This amendment is the commit containing this paragraph;
+  its exact SHA and the combined-build hashes will be recorded in the build
+  receipt before any data access.
 - Reliability patch used for this run: ScrollFiesta PR #12 exact public head
   `f0d9d2e54823e7ba2460725e81290eead8ed6e5e`. The experiment build is the
   PR #12 patch cherry-picked onto PR #11; its resulting commit/tree and
@@ -47,10 +60,13 @@ registration median is 2.38 um. Claims must retain that limitation.
   `s3://vesuvius-challenge-open-data/PHerc1203/representations/predictions/surfaces/20250820131727-surface-20260413222639-surface-m7-L0-th0.2.zarr`
 - Both level-0 arrays have metadata shape `[18977,6844,6844]`; RAW chunks
   are `[128,128,128]` and prediction chunks are `[192,192,192]`.
-- Physical reference: release `v1.0`, tag commit
-  `6937d846b5cd6cc4fb07dc8eb9770493b91b2128`, asset
-  `labels1203_L1.tar`, 515,379,200 bytes, SHA-256
+- Physical reference: release `v1.0` asset `labels1203_L1.tar`, 515,379,200
+  bytes, SHA-256
   `32a09f6081342b0f015b258ec577d0296ff23a55892af9785689d8a55bff344c`.
+- The release tag commit predates the attached PHerc1203 asset and is not its
+  code provenance. The PHerc1203 label generator first appears at exact
+  commit `5a86b43743adbd816cb53d115be105c6b2b81e5e`; the immutable asset digest
+  above is the data authority.
 - The contained uint8 label array has L1 origin `[3936,0,0]`, shape
   `[2016,3456,3456]`, and flags `valid=1`, `material=2`, `centerline=4`,
   `recto_band=8`, `boundary_poor=16`.
@@ -86,77 +102,109 @@ may not move after any data value is read.
 6. Rebuild once and export the candidate without a `--snap-recto-iters`
    flag. It must be byte-identical to explicit iteration 0.
 
-## Frozen primary physical metric
+## Amended frozen primary physical metric
 
-The scorer must be implemented and pass synthetic coordinate, topology,
-eligibility, weighted-median, and bootstrap tests before the label asset or
-fixed-box chunks are opened.
+The scorer must pass synthetic coordinate, topology, eligibility,
+shifted-null, area-coverage, registration-sensitivity, spatial-bootstrap, and
+end-to-end decision/JSON tests before the label asset or fixed-box chunks are
+opened.
 
 - OBJ coordinates are z/y/x level-0 index coordinates. Convert them to the
   physical-label local L1 coordinates by
   `p_label = (p_L0 - 0.5) / 2 - [3936,0,0]`. This is the voxel-center mapping
   consistent with the reference evaluator's pairwise L0-to-L1 max pooling.
-- Read only the fixed label-local window `z [976,1072), y [1520,1872),
-  x [1520,1872)`. It provides at least 16 L1 voxels around the nominal mesh
-  footprint.
+- Read only the fixed label-local window `z [976,1072), y [1408,2048),
+  x [1408,2048)`. The expanded y/x halo keeps both the real and shifted-null
+  samples at least 64 L1 voxels from a crop edge. Record a SHA-256 of the
+  loaded window in addition to the archive and Zarr metadata hashes.
 - For every label z plane, compute the two-dimensional Euclidean distance
   transform to bit 8 (`recto_band`). Sample the resulting distance stack
-  trilinearly at each mesh vertex. Using per-plane 2-D distances matches the
-  reference's axial side-of-sheet instrument and prevents a nearer surface in
-  another z plane from winning through a 3-D shortcut.
-- Eligibility is frozen from the pre-snap mesh and common metadata only: the
-  vertex is face-used; all coordinates and fixed pre-snap face-area weights
-  are finite; every arm stays inside the fixed L0 box with a one-voxel inner
-  margin; all eight trilinear label corners are valid for pre and both arms;
-  and the pre-snap vertex is within 3.0 L1 voxels (56.2 um) of a physical
-  recto band. Arm outcomes may not change the eligible set.
-- Give each vertex one third of the area of each incident pre-snap triangle.
-  For each provenance cube and arm, the score is the fixed-area-weighted
-  median distance to the recto band, in L1 voxels. The paired cube effect is
-  `distance(iter4) - distance(iter0)`, so positive favors the candidate.
-- The cube is the inferential unit. Use seed `20260810` and 10,000 paired
-  bootstrap resamples of the cube effects. Also report every cube, the
-  unweighted sensitivity result, vertex/area coverage, and all y-row and
-  x-column medians.
+  trilinearly at each mesh vertex. Per-plane 2-D distances match the
+  reference's axial side instrument and prevent a 3-D shortcut to a surface
+  in another z plane.
+- Use the physical evaluator's fixed null: shift every mesh sample by +64 L1
+  voxels in y. For each cube, compute the real effect and the shifted-null
+  effect as `distance(iter4) - distance(iter0)`. The primary effect is their
+  difference, `real_effect - null_effect`; positive favors iteration 0.
+- Define eligibility from the pre-snap mesh only. A pre-reference vertex must
+  be face-used, have a finite positive pre-snap area weight, lie at least four
+  L0 voxels inside the fixed box, and have valid real and +64-y null label
+  support. A target vertex must additionally remain within 3.0 L1 voxels of a
+  real recto band under every frozen registration offset below.
+- `boundary_poor` is also frozen from pre only: if any of the eight pre-snap
+  label corners carries bit 16 under any registration offset, the vertex is
+  excluded from the primary resolved-boundary score and reported in a
+  separate descriptive stratum. Its predeclared, scored, and arm-support-
+  failure counts are reported explicitly. It cannot be used to select the box
+  or tune a gate.
+- An arm may not remove its own failures. Candidate and former-arm box,
+  validity, finiteness, null-support, and crop-halo checks are safety gates on
+  the complete predeclared primary set. Any failure kills the metric decision;
+  it never drops the affected vertex and continues as if it had not existed.
+- Give each vertex one third of every incident pre-snap triangle area. For
+  each provenance cube and arm, report fixed-area-weighted median real, null,
+  and null-corrected effects, plus unweighted sensitivity results.
+- Registration sensitivity uses the published 6.1 um p95 error, or
+  `6.1 / 18.724 = 0.326` L1 voxel. Evaluate the zero offset and all 26
+  nonzero directions in `{-1,0,1}^3`, normalizing every nonzero direction to
+  radius 0.326. The eligible set stays fixed; no offset is selected from the
+  result.
+- This is one contiguous 5x5 slab, not 25 IID samples. Report every cube and
+  all five y-row and five x-column medians. Use 10,000 resamples of the five
+  row medians (seed `20260810`) and separately the five column medians (seed
+  `20260811`). These spatial-cluster intervals are consistency checks, not a
+  population-level cross-scroll confidence claim.
 
-## Frozen gates and decision rule
+## Amended frozen gates and decision rule
 
-Input and safety gates:
+Input, coverage, and safety gates:
 
 - exactly 25 nonzero uint8 RAW cubes and 25 prediction cube files, with no
   grid holes;
 - at least 20 cubes placed, with zero failed, skipped, or low-confidence
   accepted inputs; audit turn-off pairs <=5% and `|du|<2` completeness >=75%;
-- at least 20 cubes score, each with at least 100 common eligible face-used
-  vertices, and at least three scored cubes in every y row and x column;
 - identical vertex count, face indices, UVs, cube ranges and finite
   coordinates across pre and both arms;
+- zero arm-support failures on the complete predeclared primary vertex set,
+  and every sampled real/null EDT distance <64 L1 voxels;
+- at least 20 scored cubes, each with at least 100 primary vertices and at
+  least 20% of its pre-reference surface area retained; at least 40% retained
+  area globally; and at least three scored cubes in every y row and x column;
 - explicit iteration 0 and the no-flag default are byte-identical; and
 - two scorer invocations emit byte-identical JSON.
 
-The candidate is **physically superior** only if every input/safety gate
-passes and all of these hold:
+The candidate's **physical metric gate passes, with external pipeline gates
+still required**, only if every item above passes and all of these hold:
 
-1. median paired cube effect >=0.10 L1 voxel (1.87 um);
-2. paired bootstrap 95% interval lower bound >0;
-3. at least 80% of scored cubes have positive effect;
-4. every y-row and x-column median is positive; and
-5. no more than 10% of cubes favor iter4 by more than 0.25 L1 voxel.
+1. central median null-corrected cube effect >=0.33 L1 voxel (6.18 um,
+   above the published 6.1 um registration p95);
+2. the central median uncorrected real effect is positive;
+3. both the row-cluster and column-cluster bootstrap 95% lower bounds are >0;
+4. at least 80% of scored cubes have positive null-corrected effect, every
+   y-row and x-column median is positive, and no more than 10% of cubes favor
+   iter4 by more than 0.25 L1 voxel; and
+5. the overall median real and null-corrected effects remain positive under
+   all 27 frozen registration offsets.
 
-The former four-iteration behavior is **physically superior** only if the
-same five gates pass after reversing the sign. Otherwise the physical result
-is a tie/inconclusive default decision. No threshold, box, eligibility rule,
-or arm may be changed after access.
+The former four-iteration metric gate passes only if the same five gates pass
+after reversing every sign and interval bound. Otherwise the result is a
+tie/inconclusive default decision. A full claim is permitted only after the
+external placement/audit/default-equivalence gates also pass. This is
+independent-scroll, one-slab evidence, not a population-wide cross-scroll
+inference. No threshold, box, eligibility rule, offset, or arm may change
+after access.
 
 Run the published sigma-1, fixed-pre-normal CT-ridge scorer as a secondary
-metric with the same 25 cubes. It cannot override the physical decision.
+mechanistic metric on the same 25 cubes. It cannot override the null-corrected
+physical decision.
 
 ## Frozen visual and publication rule
 
 The only qualitative plane is global L0 z=9920, fixed as the midpoint of the
 slab. Assemble all 25 RAW tiles and overlay the physical recto band plus the
 pre, iter0, and iter4 mesh intersections. Also render the complete fixed 5x5
-per-cube effect heatmap. No slice or crop search is allowed.
+per-cube null-corrected resolved-boundary effect heatmap. No slice or crop
+search is allowed.
 
 Publish the complete positive, negative, or inconclusive result with credit
 to the physical-audit/#1382 authors, exact commands, hashes, per-cube data,
