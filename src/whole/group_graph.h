@@ -71,6 +71,7 @@ typedef struct {
     double   anchor_weight_effective;
     size_t   pairs_used, pairs_rej_radius, pairs_rej_frac;
     size_t   edges_rej_prior, edges_rej_dr;
+    size_t   components_radius_gauged, components_raw_gauged;
 } GroupGraph;
 
 typedef struct {
@@ -107,6 +108,10 @@ typedef struct {
     int    prior_min_verts;  /* node joins the gauge vote at >= this (def 8) */
     int    raw_component_gauge; /* shift each solved forest component closest
                                    to Ribbon's shared raw k=0 chart */
+    int    consensus_component_gauge; /* use the radius gauge only when every
+                                   sufficiently supported node in a forest
+                                   component votes for the same integer shift;
+                                   otherwise preserve the raw chart */
     int    raw_du_gauge;      /* preserve Ribbon's shared raw continuous chart:
                                 leave every solved du at zero */
     double anchor_weight;     /* soft per-node radius anchor in collective
