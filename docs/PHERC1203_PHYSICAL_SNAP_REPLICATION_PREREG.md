@@ -252,3 +252,12 @@ Frozen SHA-256 and byte sizes:
 | physical scorer | 36639 | `3c8b7f4ec724bfe9e64cd55d2cbfa31dfd297dfcbaf75d651a417fae6786b64e` |
 | physical scorer tests | 10257 | `3b163cd07552f87911801c773c367ee17c109d88c1d58e42a965ae689b0e247e` |
 | preregistration before this receipt | 12364 | `3327ce96a721ae643699dfa4ccd92ed7c24db9a236afbc1449ce164d0f8bfb10` |
+
+## Outcome
+
+The fixed run stopped at the external placement gate: 125/1268 turn-off
+pairs (9.858%) exceeded the frozen 5% maximum, although all 25 cubes completed
+and `|du|<2` completeness was 79.18%. No snap arm or physical arm score was
+run. See
+[`PHERC1203_PHYSICAL_SNAP_FEASIBILITY_RESULT.md`](PHERC1203_PHYSICAL_SNAP_FEASIBILITY_RESULT.md)
+for the complete feasibility result and hashes.
