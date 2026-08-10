@@ -102,7 +102,7 @@ typedef struct {
                                 radial extent; 13k frustrated edges) */
     double intra_frac_max;   /* |dprior - round(dprior)| admission (0.35) */
     double intra_conf;       /* confidence scale of intra edges (128) */
-    int    min_edge_pairs;   /* bucket -> edge admission (def 3) */
+    int    min_edge_pairs;   /* bucket -> edge admission (def 1) */
     int    conf_n_cap;       /* pair-count saturation (def 256) */
     double conf_mad0;        /* mad scale in the confidence (def 0.02) */
     int    prior_min_verts;  /* node joins the gauge vote at >= this (def 8) */

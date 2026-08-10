@@ -53,7 +53,12 @@ void GroupGraphOpts_default(GroupGraphOpts *o)
     o->intra_prior = 0;      /* off: measured noisier than cross edges */
     o->intra_frac_max = 0.35;
     o->intra_conf = 128.0;
-    o->min_edge_pairs = 3;
+    /* A winding group can touch a trimmed cube seam in only one or two skin
+     * vertices.  Those sparse buckets still carry an exact-looking integer
+     * phase observation after the 3-D, radial, and fractional-phase gates.
+     * Dropping them leaves the corresponding nodes disconnected and makes
+     * their whole-turn gauge depend on the much noisier radius prior. */
+    o->min_edge_pairs = 1;
     o->conf_n_cap = 256;
     o->conf_mad0 = 0.02;
     o->prior_min_verts = 8;
@@ -1139,6 +1144,25 @@ int GroupGraph_selftest(void)
         if (r0.n_groups >= 1 && r1.n_groups >= 3)
             ggst_check(r0.g_wk[0] - r1.g_wk[2] == 1,
                        "t6 solved k difference = obs", &fails);
+
+        /* A single gated correspondence is enough for a sparse winding group
+         * under the production default. Raising the explicit floor still
+         * drops it, so callers can request the older conservative behavior. */
+        {
+            size_t sparse_nskin[2] = { 1, 1 };
+            GroupGraph gs;
+            GroupGraphOpts sparse = o;
+            int src = GroupGraph_build(arena, cn, 2, skins, sparse_nskin, ap,
+                                       a, b, pitch, &sparse, &gs);
+            ggst_check(src == 0 && gs.n_edges == 1 && gs.edges[0].n == 1,
+                       "t6b default admits one-pair sparse edge", &fails);
+            sparse.min_edge_pairs = 2;
+            GroupGraph gs2;
+            src = GroupGraph_build(arena, cn, 2, skins, sparse_nskin, ap,
+                                   a, b, pitch, &sparse, &gs2);
+            ggst_check(src == 0 && gs2.n_edges == 0,
+                       "t6b explicit two-pair floor drops sparse edge", &fails);
+        }
     }
 
     /* t8: raw-chart gauges preserve the globally pinned chart while keeping

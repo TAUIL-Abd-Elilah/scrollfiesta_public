@@ -224,6 +224,91 @@ typedef struct {
     int    uwarp_knots;      /* --uwarp-knots (<=0 => default 5) */
 } WholeCfg;
 
+/* One bit per GroupGraph node: the node participates in at least one admitted
+ * cross-cube relation.  Such a node's integer and matching du must remain the
+ * graph solution during the later pooled-neighbour polish. */
+static uint8_t *graph_support_mask(Arena_T arena, const GroupGraph *g)
+{
+    assert(arena && g);
+    uint8_t *supported = (uint8_t *)ARENA_CALLOC(
+        arena, g->n_nodes > 0 ? g->n_nodes : 1, sizeof(uint8_t));
+    for (size_t e = 0; e < g->n_edges; e++) {
+        if (g->edges[e].a >= 0 && (size_t)g->edges[e].a < g->n_nodes)
+            supported[g->edges[e].a] = 1;
+        if (g->edges[e].b >= 0 && (size_t)g->edges[e].b < g->n_nodes)
+            supported[g->edges[e].b] = 1;
+    }
+    return supported;
+}
+
+/* Restore graph-supported group entries in a mutable CubeReg proposal.
+ * Returns the number of proposed integer changes that were rejected. */
+static size_t preserve_graph_supported_groups(const GroupGraph *g,
+                                               const uint8_t *supported,
+                                               size_t cube,
+                                               const PlacedReg *current,
+                                               PlacedReg *proposal)
+{
+    assert(g && supported && current && proposal && cube < g->n_cubes);
+    if (proposal->g_wk == NULL || proposal->g_du == NULL ||
+        current->g_wk == NULL || current->g_du == NULL)
+        return 0;
+
+    int32_t *new_wk = (int32_t *)proposal->g_wk;
+    double *new_du = (double *)proposal->g_du;
+    size_t rejected = 0;
+    int32_t q0 = g->cube_node0[cube], q1 = g->cube_node0[cube + 1];
+    for (int32_t q = q0; q < q1; q++) {
+        if (!supported[q]) continue;
+        int32_t gid = g->nodes[q].gid;
+        if (gid < 0 || gid >= proposal->n_groups ||
+            gid >= current->n_groups)
+            continue;
+        if (new_wk[gid] != current->g_wk[gid]) rejected++;
+        new_wk[gid] = current->g_wk[gid];
+        new_du[gid] = current->g_du[gid];
+    }
+    return rejected;
+}
+
+static int graph_polish_guard_selftest(void)
+{
+    Arena_T arena = Arena_new();
+    GGNode nodes[3];
+    memset(nodes, 0, sizeof(nodes));
+    nodes[0].cube = 0; nodes[0].gid = 0;  /* supported */
+    nodes[1].cube = 0; nodes[1].gid = 1;  /* isolated */
+    nodes[2].cube = 1; nodes[2].gid = 0;  /* supported */
+    GGEdge edge;
+    memset(&edge, 0, sizeof(edge));
+    edge.a = 0; edge.b = 2;
+    int32_t cube_node0[3] = { 0, 2, 3 };
+    GroupGraph g;
+    memset(&g, 0, sizeof(g));
+    g.nodes = nodes; g.n_nodes = 3;
+    g.edges = &edge; g.n_edges = 1;
+    g.cube_node0 = cube_node0; g.n_cubes = 2;
+
+    int32_t old_wk[2] = { 4, 7 }, new_wk[2] = { -3, 8 };
+    double old_du[2] = { 1.25, 2.5 }, new_du[2] = { 9.0, 3.5 };
+    PlacedReg current, proposal;
+    memset(&current, 0, sizeof(current));
+    memset(&proposal, 0, sizeof(proposal));
+    current.g_wk = old_wk; current.g_du = old_du; current.n_groups = 2;
+    proposal.g_wk = new_wk; proposal.g_du = new_du; proposal.n_groups = 2;
+
+    uint8_t *supported = graph_support_mask(arena, &g);
+    size_t rejected = preserve_graph_supported_groups(
+        &g, supported, 0, &current, &proposal);
+    int fail = !(rejected == 1 && new_wk[0] == 4 && new_du[0] == 1.25 &&
+                 new_wk[1] == 8 && new_du[1] == 3.5 &&
+                 supported[0] && !supported[1] && supported[2]);
+    fprintf(stderr, "graph_polish_guard_selftest: %s\n",
+            fail ? "FAIL" : "PASS");
+    Arena_dispose(&arena);
+    return fail;
+}
+
 enum {
     WHOLE_PITCH_AUTO = 0,
     WHOLE_PITCH_PINNED = 1,
@@ -1555,13 +1640,21 @@ static int run_reregister(const WholeCfg *cfg_in)
     for (size_t i = 0; i < n; i++)
         GroupGraph_cube_reg(arena, &gg, i, &regs[i]);
 
+    /* Mark every node whose integer relation is measured by at least one
+     * admitted graph edge.  The old unconstrained cube polish pooled all
+     * neighbour groups and could overwrite these explicit (gidA,gidB)
+     * relations.  Sparse seam groups were hit hardest: on the PHerc0211
+     * validation slab all 54 residual turn errors belonged to 1--2-pair
+     * buckets, and unconstrained polish reintroduced 30 of the errors after
+     * the graph had removed them. */
+    uint8_t *graph_supported = graph_support_mask(arena, &gg);
 
-    /* ---- Gauss-Seidel polish from the graph seed. The graph fixes the
-     * GLOBAL gauge (branch cuts, component turns); the sweeps then refine
-     * per-group du with the proven per-cube median machinery and out-vote
-     * any small component the radius prior mis-gauged -- from a correct
-     * basin, coordinate descent defends the RIGHT majority. Integer changes
-     * are counted for the convergence stop, exactly like pass_c. ---- */
+    /* ---- Gauss-Seidel polish from the graph seed.  Only graph-ISOLATED
+     * groups may take its pooled-neighbour integer/du proposal.  A supported
+     * group keeps the graph's explicit pair-bucket solution; otherwise a
+     * coordinate update can improve its local majority while silently
+     * breaking a measured weak edge.  Accepted cube-level integer changes
+     * drive the convergence stop, exactly like pass_c. ---- */
     Arena_T polish_tabs = NULL;
     if (cfg.sweeps > 0 && !cfg.rr_raw_component_gauge) {
         /* tables in their OWN arena so the per-cube scratch restore can
@@ -1573,6 +1666,7 @@ static int run_reregister(const WholeCfg *cfg_in)
         int sweep = 0;
         for (sweep = 0; sweep < cfg.sweeps; sweep++) {
             size_t changes = 0;
+            size_t protected_proposals = 0;
             for (size_t oi = 0; oi < n; oi++) {
                 size_t i = (size_t)order[oi];
                 if (nskin[i] == 0) continue;
@@ -1601,6 +1695,12 @@ static int run_reregister(const WholeCfg *cfg_in)
                               cfg.min_pairs, cfg.min_group_pairs, &cr);
                 Arena_restore(arena, mark);
                 if (!cr.low_conf) {
+                    /* cr.tab lives in tab_arena and CubeReg_solve allocated
+                     * mutable tables even though PlacedReg exposes them as
+                     * read-only.  Restore both k and its matching du for every
+                     * graph-supported group before accepting this proposal. */
+                    protected_proposals += preserve_graph_supported_groups(
+                        &gg, graph_supported, i, &regs[i], &cr.tab);
                     int diff = cr.tab.wk_cube != regs[i].wk_cube;
                     int32_t gmax = cr.tab.n_groups < regs[i].n_groups
                                  ? cr.tab.n_groups : regs[i].n_groups;
@@ -1610,8 +1710,10 @@ static int run_reregister(const WholeCfg *cfg_in)
                     regs[i] = cr.tab;   /* lives in tab_arena */
                 }
             }
-            logf_both("[reregister] polish sweep %d: %zu integer changes\n",
-                      sweep + 1, changes);
+            logf_both("[reregister] polish sweep %d: %zu accepted cube "
+                      "integer changes; %zu graph-supported group proposals "
+                      "preserved\n", sweep + 1, changes,
+                      protected_proposals);
             if (changes == 0) break;
         }
         logf_both("[reregister] polish done in %.1fs\n",
@@ -1861,9 +1963,10 @@ static void usage(void)
         "  --pair-gate F       cross-seam pairing gate vox (default 3.5)\n"
         "  --skin F            boundary-skin depth vox (default 4.0)\n"
         "  --min-pairs N       registration confidence floor (default 24)\n"
-        "  --min-group-pairs N per-group correction floor (default 8; groups\n"
+        "  --min-group-pairs N per-group correction floor (default 3; groups\n"
         "                      with fewer pairs take the cube-level medians)\n"
-        "  --sweeps N          loop-closure consistency sweeps (default 8)\n"
+        "  --min-edge-pairs N  graph edge floor per group pair (default 1)\n"
+        "  --sweeps N          isolated-group consistency sweeps (default 8)\n"
         "  --cut-ratio/--cut-floor/--cut-len   bad-link gates (4 / 40 / 0)\n"
         "  --seed-id ID        force the calibration + flood seed cube\n"
         "  --max-concurrent N  parallel unwraps (default 32)\n"
@@ -1883,6 +1986,7 @@ int main(int argc, char **argv)
         int f = json_escape_selftest();
         f += rr_jstr_selftest();
         f += audit_quality_selftest();
+        f += graph_polish_guard_selftest();
         f += calibration_select_selftest();
         f += CubeSched_selftest();
         f += CubeReg_selftest();
@@ -1931,7 +2035,7 @@ int main(int argc, char **argv)
      * shift; disputed components retain Ribbon's coherent raw global chart.
      * Explicit all-raw and all-radius modes remain available for diagnosis. */
     cfg.rr_max_moves = 200;
-    cfg.rr_min_edge_pairs = 3;
+    cfg.rr_min_edge_pairs = 1;
     cfg.rr_raw_component_gauge = 0;
     cfg.rr_consensus_component_gauge = 1;
     cfg.rr_anchor_weight = 0.025;
