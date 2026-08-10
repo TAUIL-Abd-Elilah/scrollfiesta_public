@@ -212,3 +212,43 @@ and limitations. If the physical result favors iter4, amend the PR #11
 default claim rather than hiding the contradiction. If an input/safety gate
 fails, publish only a clearly labeled feasibility failure; it supports no
 physical arm claim.
+
+## Pre-access build and test receipt
+
+Frozen at 2026-08-10T16:11:23+01:00, still with
+`labels1203_L1.tar` absent and without reading any PHerc1203 voxel, label
+chunk, mesh, or local outcome.
+
+- Public amended protocol/scorer commit:
+  `120690c5b3d34bc9786505811684b092fdc18d79`.
+- Exact combined experiment commit:
+  `d9c67f137aeb16dd6e3d4b2ef6149079ffcdfe42`, tree
+  `1265f49b0602febb2b958e4088fc811d508a358b`. Its PR #12 cherry-pick
+  `2b4de7632303d0baca6df943ad071a304a6151b8` has the same stable patch ID
+  (`98c41e386847549c05da95d2045fb88b33df907b`) as public PR #12 head
+  `f0d9d2e54823e7ba2460725e81290eead8ed6e5e`.
+- MSBuild `17.10.4.21802`, Release/x64, full `scrollfiesta.sln` build: exit 0.
+- `scroll_unroll --selftest`: PASS, zero failures.
+- Full Python suite: 58 passed, 2 skipped. The focused native common suite is
+  24/24, including `clipper2_union_2d_abi`.
+- The inherited aggregate native runner is 8/9: its only failure occurs
+  before pipeline execution because upstream `main` hard-codes another
+  developer's `C:/Users/mordr/...` TIFF path in
+  `scripts/extract/pipeline_cube_smoke_test.c:47`. This is a disclosed test-
+  harness portability failure, not a passing pipeline test and not evidence
+  for either arm.
+
+Frozen SHA-256 and byte sizes:
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| `scroll_unroll.exe` | 772096 | `bd85a0bb7d7e2481b535e9293cc8e026cff3e371a7e4269435ee2ce3c5ec37b4` |
+| `scroll_whole.exe` | 264192 | `aec8b814d6c0bfa59d29dccefea5389ce562172fa3569e014629335dd1be5a0f` |
+| `grid_pipeline.exe` | 414720 | `670dcabe05e854e93b30a0ce97ceeea0e0bd4b4370aac7a69016d4c78e8819a3` |
+| `cube_mesh.exe` | 1174016 | `53a8ac8ed7980d27d39a4ca1aabf76c8fefe47230bd2115ae117c614ba5066e7` |
+| `grid_weld.exe` | 489472 | `8bae8ce7888696e3bdc8b32275467e1682f1370c3386c7c8835115623760c2bc` |
+| `all_tests.exe` | 1331712 | `c43056e39ce93a6e8f9c01918f390ece11c8b731427d76af2d70c777bd79356e` |
+| `Clipper2.lib` | 1165150 | `b2d6f07c03237f770ab72cebfbdd1036210a9f5345dddb0c086f17c1418fd818` |
+| physical scorer | 36639 | `3c8b7f4ec724bfe9e64cd55d2cbfa31dfd297dfcbaf75d651a417fae6786b64e` |
+| physical scorer tests | 10257 | `3b163cd07552f87911801c773c367ee17c109d88c1d58e42a965ae689b0e247e` |
+| preregistration before this receipt | 12364 | `3327ce96a721ae643699dfa4ccd92ed7c24db9a236afbc1449ce164d0f8bfb10` |
