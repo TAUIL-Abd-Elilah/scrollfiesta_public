@@ -88,6 +88,18 @@ the result, the non-network Python suite completed with 58 passed, one
 environment-dependent skip, and four network tests deselected. The frozen
 comparator's three focused tests are included in that run.
 
+## Related winding-constraint work
+
+[`abundantjoe/winding-sync`](https://github.com/abundantjoe/winding-sync) is
+adjacent but operates at a different layer: it generates relative winding
+constraints directly from CT and reconciles its node graph with global L1
+integer synchronization. This change neither generates those annotations nor
+reimplements that solver. It consumes ScrollFiesta's existing cross-cube mesh
+seam correspondences, admits sparse group-pair observations after the existing
+geometry/phase gates, and prevents the later local polish from overwriting
+accepted relations. The two approaches are complementary; no code or artifact
+from `winding-sync` is used here.
+
 ## Scope
 
 This is strong held-out evidence for the sparse cross-cube winding change, but
