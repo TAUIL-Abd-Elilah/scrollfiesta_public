@@ -27,6 +27,21 @@ The figure renders every audited pair set with fixed color scales; no edge was
 selected or hidden. The SVG version and machine-readable per-edge table are in
 the result bundle.
 
+## Complete downstream texture check
+
+A separately preregistered five-stage `scroll_unroll` comparison passed every
+comparability, safety, and repeat-determinism gate. Relative to the exact
+parent, the candidate reduced final multi-cover from 47.55% to 42.45%, reduced
+final seam-column discontinuity from 13.657 to 13.201, and increased fill from
+6.68% to 6.86% on an identical canvas. It did **not** meet the stricter frozen
+downstream efficacy rule: stage-1 seam excess fell by 0.028 versus the required
+0.05. The honest decision is therefore `DOWNSTREAM_COMPATIBILITY_ONLY`.
+
+The [complete downstream report](PHERC0826_SPARSE_GRAPH_DOWNSTREAM_RESULT.md)
+and its uncropped full-strip figure disclose the local-slab sparsity and all
+other scope limits. This follow-up supports absence of a detected downstream
+regression; it is not counted as a second independent efficacy result.
+
 ## What changed
 
 The exact parent already shared the multi-seed pitch selector and consensus
@@ -82,6 +97,11 @@ The compact bundle under
 - `paired_result.json`, including all 29 per-pair rows and frozen gate
   decisions; and
 - complete PNG and SVG seam maps.
+
+The separate compact downstream bundle under
+`docs/results/pherc0826_sparse_graph_downstream_20260810/` contains the frozen
+machine decision, all three pipeline-stat files, full process logs, and the
+complete PNG/SVG strip comparison.
 
 The exact execution commands and thresholds are in the preregistration. After
 the result, the non-network Python suite completed with 58 passed, one
