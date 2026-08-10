@@ -5,6 +5,14 @@ access to the selected slab. The tested change is candidate
 `a47a21c3a9d445c90d28e218b8f0fcbecd49c079` against its exact parent
 `e0cf51cab03f6fe84e43e8c7ff5be9051d951b1d`.
 
+**Larger-scale follow-up:** a preregistered 147-cube stress test found a
+positive but sub-threshold effect on seams wholly outside this known center
+(`5.081% -> 4.400%`, -0.681 point versus a frozen -1.00-point floor), followed
+by a complete-RAW downstream regression in multi-cover (`50.96% -> 57.78%`).
+The exact candidate is therefore **not supported as an unconditional default**
+despite this valid small-slab efficacy result. See the
+[scale result](PHERC0826_SPARSE_GRAPH_SCALE_STRESS_RESULT.md).
+
 The parent and candidate were run on the same 25 meshes and audited on the
 same 29 adjacent pair sets containing 1,076 correspondences. Preserving
 sparse observed winding constraints reduced whole-turn seam errors from
