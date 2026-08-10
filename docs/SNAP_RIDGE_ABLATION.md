@@ -64,6 +64,49 @@ SHA-256 digests are respectively
 `495b6cbbafd744aa628a253ed91b77cdb43692fc25b750fc09222e285e6bbd1a` and
 `157d240f09ae26aedb87c2089000ffb05555aed3fa38c020e2df900e1e057916`.
 
+## Untouched adjacent-slab replication
+
+The same fixed comparison was then run without tuning on the first 128-voxel
+slab immediately after the published block: z `[4864,4992)`, with the same
+y/x footprint. The region and success gates were frozen locally before any of
+its chunks were read; the complete preregistration and build receipt has
+SHA-256
+`a4017d5a40f7b43555df3872d7279f97a5b089fd8120d385154acf30a88b9e3b`.
+The full frozen text is
+[`PHERC0139_ADJACENT_SLAB_REPLICATION_PREREG.md`](PHERC0139_ADJACENT_SLAB_REPLICATION_PREREG.md).
+This is a spatial replication on PHerc0139, not a cross-scroll claim.
+
+All 25 prediction and 25 RAW cubes validated as matching uint8 128-cubes.
+Exact-head meshing succeeded 25/25. After reregistration, placement retained
+25/25 with zero skipped or low-confidence cubes; its independent audit found
+3.418% turn-off and 87.30% at |du| < 2. The welded mesh had zero non-manifold
+edges and zero pinch vertices.
+
+| arm | adjacent-slab median ridge offset |
+|---|---:|
+| pre-snap stage 2 | 1.6742 |
+| repair only, recto iterations 0 | **1.4593** |
+| previous default, recto iterations 4 | 2.1756 |
+
+Repair-only improved over four iterations by 0.7034 voxel (paired bootstrap
+95% CI `[0.6604, 0.7826]`) and won all 25/25 cubes; the smallest per-cube
+improvement was 0.4694 voxel. The paired calculation used 15,971 common
+bracketed vertices. Both arms retained identical topology, UVs, cube ranges,
+32,516 vertices, and 51,209 faces. An independent score rerun was byte-identical,
+and the no-flag default OBJ was byte-identical to explicit iteration 0.
+
+The complete result is committed as
+[`results/pherc0139_snap_adjacent_replication.json`](results/pherc0139_snap_adjacent_replication.json),
+SHA-256
+`b42ab7e2bac747f628fdacc174dac622cbcef8b8c436e22115f74c76a483e3df`.
+The fixed midpoint z=4928 image below shows both contours following visible
+layers without an obvious cross-sheet jump. It is a qualitative check only.
+
+![Adjacent-slab midpoint RAW CT cross-section with both mesh contours](images/pherc0139_snap_adjacent_cross_section_z4928.png)
+
+The PNG SHA-256 is
+`7d207a53b500e8081687fe24cb6b6b90cbd6641a39c7da9262b7727e1ba176d5`.
+
 ## Qualitative checks
 
 The fixed held-out-band midpoint, z=4800, was chosen without searching slices.
@@ -127,6 +170,22 @@ py -m uv run --project python python/scripts/score_snap_ridge.py score \
   --split test --pre OUT/pre.obj --arm iter0_r3=OUT/iter0.obj \
   --arm iter4_r3=OUT/iter4.obj --production iter4_r3 \
   --candidate iter0_r3 --cache GRID/ct_sigma1.npy --out test.json
+```
+
+For the frozen adjacent slab, prepare and score the explicit grid geometry:
+
+```text
+py -m uv run --project python python/scripts/score_snap_ridge.py prepare \
+  --raw-dir ADJACENT_GRID/cubes_RAW --cache ADJACENT_GRID/ct_sigma1.npy \
+  --origin 4864 3072 2560 --shape 128 640 640
+
+py -m uv run --project python python/scripts/score_snap_ridge.py score \
+  --split replication --pre ADJACENT_OUT/pre.obj \
+  --arm iter0_r3=ADJACENT_OUT/iter0.obj \
+  --arm iter4_r3=ADJACENT_OUT/iter4.obj --production iter4_r3 \
+  --candidate iter0_r3 --cache ADJACENT_GRID/ct_sigma1.npy \
+  --origin 4864 3072 2560 --shape 128 640 640 --z-origins 4864 \
+  --out adjacent_replication.json
 ```
 
 The scorer verifies the CT-cache digest and refuses changed topology, face

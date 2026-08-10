@@ -59,20 +59,38 @@ def sha256(path: Path, block: int = 8 << 20) -> str:
     return digest.hexdigest()
 
 
-def prepare_cache(raw_dir: Path, cache: Path) -> dict:
-    """Assemble and sigma-1 smooth the frozen 4x5x5 PHerc0139 RAW grid."""
+def prepare_cache(
+    raw_dir: Path,
+    cache: Path,
+    *,
+    origin: np.ndarray = ORIGIN,
+    shape: tuple[int, int, int] = SHAPE,
+) -> dict:
+    """Assemble and sigma-1 smooth a complete rectangular RAW cube grid."""
+    origin = np.asarray(origin, dtype=np.float64)
+    shape = tuple(int(value) for value in shape)
+    if origin.shape != (3,) or len(shape) != 3:
+        raise ValueError("origin and shape must each have three z,y,x values")
+    if any(value <= 0 or value % CHUNK for value in shape):
+        raise ValueError(f"shape must be positive multiples of {CHUNK}: {shape}")
+    if np.any(origin != np.floor(origin)) or np.any(origin.astype(int) % CHUNK):
+        raise ValueError(f"origin must contain multiples of {CHUNK}: {origin}")
+    grid_shape = tuple(value // CHUNK for value in shape)
+    expected_cubes = int(np.prod(grid_shape))
     files = sorted(raw_dir.glob("z*_y*_x*.tif"))
-    if len(files) != 100:
-        raise ValueError(f"expected 100 RAW cubes, found {len(files)} in {raw_dir}")
-    volume = np.empty(SHAPE, dtype=np.uint8)
-    occupied = np.zeros((4, 5, 5), dtype=bool)
+    if len(files) != expected_cubes:
+        raise ValueError(
+            f"expected {expected_cubes} RAW cubes, found {len(files)} in {raw_dir}"
+        )
+    volume = np.empty(shape, dtype=np.uint8)
+    occupied = np.zeros(grid_shape, dtype=bool)
     names: list[str] = []
     for path in files:
         match = TIFF_RE.match(path.name)
         if not match:
             raise ValueError(f"bad cube filename: {path.name}")
         world = np.array([int(value) for value in match.groups()], dtype=np.int64)
-        index = ((world - ORIGIN.astype(np.int64)) // CHUNK).astype(np.int64)
+        index = ((world - origin.astype(np.int64)) // CHUNK).astype(np.int64)
         if np.any(index < 0) or np.any(index >= np.array(occupied.shape)):
             raise ValueError(f"cube outside registered bbox: {path.name}")
         if occupied[tuple(index)]:
@@ -93,15 +111,15 @@ def prepare_cache(raw_dir: Path, cache: Path) -> dict:
 
     cache.parent.mkdir(parents=True, exist_ok=True)
     smooth = np.lib.format.open_memmap(
-        cache, mode="w+", dtype=np.float32, shape=SHAPE
+        cache, mode="w+", dtype=np.float32, shape=shape
     )
     gaussian_filter(volume, SIGMA, output=smooth, mode="nearest")
     smooth.flush()
     del smooth
     manifest = {
         "raw_dir": raw_dir.as_posix(),
-        "origin_zyx": ORIGIN.astype(int).tolist(),
-        "shape_zyx": list(SHAPE),
+        "origin_zyx": origin.astype(int).tolist(),
+        "shape_zyx": list(shape),
         "chunk": CHUNK,
         "sigma": SIGMA,
         "n_cubes": len(files),
@@ -186,11 +204,14 @@ def parse_arm(value: str) -> tuple[str, Path]:
 
 
 def ridge_offsets(
-    smooth: np.ndarray, pts_world: np.ndarray, normals: np.ndarray
+    smooth: np.ndarray,
+    pts_world: np.ndarray,
+    normals: np.ndarray,
+    origin: np.ndarray = ORIGIN,
 ) -> np.ndarray:
     """Return parabolically refined intensity-ridge offsets along fixed normals."""
     ts = np.arange(-HALF, HALF + 1e-8, STEP, dtype=np.float32)
-    points = pts_world.astype(np.float32) - ORIGIN.astype(np.float32)
+    points = pts_world.astype(np.float32) - np.asarray(origin, dtype=np.float32)
     coords = (
         points[:, :, None]
         + normals[:, :, None].astype(np.float32) * ts[None, None, :]
@@ -247,17 +268,22 @@ def bootstrap_median_ci(values: np.ndarray) -> list[float]:
     return [float(value) for value in np.percentile(medians, [2.5, 97.5])]
 
 
-def _validated_cache_metadata(cache: Path) -> dict:
+def _validated_cache_metadata(
+    cache: Path,
+    origin: np.ndarray = ORIGIN,
+    shape: tuple[int, int, int] = SHAPE,
+) -> dict:
     metadata_path = cache.with_suffix(cache.suffix + ".json")
     if not cache.exists() or not metadata_path.exists():
         raise FileNotFoundError("run the prepare command first")
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    expected_cubes = int(np.prod(np.asarray(shape, dtype=np.int64) // CHUNK))
     expected = {
-        "origin_zyx": ORIGIN.astype(int).tolist(),
-        "shape_zyx": list(SHAPE),
+        "origin_zyx": np.asarray(origin, dtype=int).tolist(),
+        "shape_zyx": list(shape),
         "chunk": CHUNK,
         "sigma": SIGMA,
-        "n_cubes": 100,
+        "n_cubes": expected_cubes,
     }
     for key, value in expected.items():
         if metadata.get(key) != value:
@@ -281,12 +307,30 @@ def _validated_cache_metadata(cache: Path) -> dict:
 
 def score(args: argparse.Namespace) -> dict:
     """Score one locked split and write the complete JSON result."""
-    if args.split == "test" and not args.candidate:
+    if args.split in ("test", "replication") and not args.candidate:
         raise ValueError(
-            "test split is locked: pass --candidate NAME after development selection"
+            f"{args.split} split is locked: pass --candidate NAME"
+        )
+    if args.split == "replication":
+        if args.origin is None or args.shape is None or not args.z_origins:
+            raise ValueError(
+                "replication requires --origin, --shape, and --z-origins"
+            )
+        origin = np.asarray(args.origin, dtype=np.float64)
+        shape = tuple(int(value) for value in args.shape)
+        selected_z_origins = tuple(int(value) for value in args.z_origins)
+    else:
+        if args.origin is not None or args.shape is not None or args.z_origins:
+            raise ValueError(
+                "explicit grid geometry is reserved for --split replication"
+            )
+        origin = ORIGIN
+        shape = SHAPE
+        selected_z_origins = (
+            (4352, 4480, 4608) if args.split == "dev" else (4736,)
         )
     cache = Path(args.cache)
-    cache_metadata = _validated_cache_metadata(cache)
+    cache_metadata = _validated_cache_metadata(cache, origin, shape)
     smooth = np.load(cache, mmap_mode="r")
 
     pre = load_obj(Path(args.pre))
@@ -320,8 +364,8 @@ def score(args: argparse.Namespace) -> dict:
         & (normal_length < 1.01)
     )
     all_positions = [pre["verts"]] + [arm["verts"] for arm in arms.values()]
-    low = ORIGIN + MARGIN
-    high = ORIGIN + np.array(SHAPE) - 1.0 - MARGIN
+    low = origin + MARGIN
+    high = origin + np.array(shape) - 1.0 - MARGIN
     for positions in all_positions:
         eligible &= np.all((positions >= low) & (positions <= high), axis=1)
 
@@ -330,9 +374,7 @@ def score(args: argparse.Namespace) -> dict:
     selected_cubes: list[tuple[int, str, int, int]] = []
     for cube_index, (name, lo, hi) in enumerate(pre["cubes"]):
         z_origin = int(name[1:6])
-        wanted = (
-            args.split == "dev" and z_origin in (4352, 4480, 4608)
-        ) or (args.split == "test" and z_origin == 4736)
+        wanted = z_origin in selected_z_origins
         cube_id[lo:hi] = cube_index
         if wanted:
             split_vertex[lo:hi] = True
@@ -342,11 +384,13 @@ def score(args: argparse.Namespace) -> dict:
     indices = np.flatnonzero(eligible)
     fixed_normals = normals[indices].astype(np.float32)
     offsets = {
-        "pre": ridge_offsets(smooth, pre["verts"][indices], fixed_normals)
+        "pre": ridge_offsets(
+            smooth, pre["verts"][indices], fixed_normals, origin
+        )
     }
     for name, arm in arms.items():
         offsets[name] = ridge_offsets(
-            smooth, arm["verts"][indices], fixed_normals
+            smooth, arm["verts"][indices], fixed_normals, origin
         )
     common = np.ones(len(indices), dtype=bool)
     for values in offsets.values():
@@ -391,9 +435,24 @@ def score(args: argparse.Namespace) -> dict:
             item["displacement_vs_pre"] = percentiles(displacement[used])
         summaries[name] = item
 
-    result = {
-        "tool": "score_snap_ridge",
-        "protocol": {
+    if args.split == "replication":
+        protocol = {
+            "split": args.split,
+            "z_origins": list(selected_z_origins),
+            "sigma": SIGMA,
+            "half": HALF,
+            "step": STEP,
+            "outer_margin": MARGIN,
+            "normal_source": "pre-snap OBJ, fixed for all arms",
+            "inferential_unit": "cube",
+            "bootstrap_seed": BOOTSTRAP_SEED,
+            "bootstrap_resamples": BOOTSTRAP_N,
+            "production": args.production,
+            "candidate": args.candidate,
+        }
+    else:
+        # Keep the published PHerc0139 schema and insertion order byte-stable.
+        protocol = {
             "split": args.split,
             "dev_z_origins": [4352, 4480, 4608],
             "test_z_origin": 4736,
@@ -407,7 +466,10 @@ def score(args: argparse.Namespace) -> dict:
             "bootstrap_resamples": BOOTSTRAP_N,
             "production": args.production,
             "candidate": args.candidate,
-        },
+        }
+    result = {
+        "tool": "score_snap_ridge",
+        "protocol": protocol,
         "cache_metadata": cache_metadata,
         "inputs": {
             "pre": {"path": pre["path"], "sha256": pre["sha256"]},
@@ -448,17 +510,26 @@ def main() -> None:
         type=Path,
         default=Path("data/PHerc0139-4x5x5/ct_sigma1.npy"),
     )
+    prepare.add_argument("--origin", nargs=3, type=int)
+    prepare.add_argument("--shape", nargs=3, type=int)
     run = commands.add_parser("score")
-    run.add_argument("--split", choices=("dev", "test"), required=True)
+    run.add_argument(
+        "--split", choices=("dev", "test", "replication"), required=True
+    )
     run.add_argument("--pre", required=True, type=Path)
     run.add_argument("--arm", action="append", required=True, type=parse_arm)
     run.add_argument("--production", required=True)
     run.add_argument("--candidate")
     run.add_argument("--cache", default="data/PHerc0139-4x5x5/ct_sigma1.npy")
+    run.add_argument("--origin", nargs=3, type=int)
+    run.add_argument("--shape", nargs=3, type=int)
+    run.add_argument("--z-origins", nargs="+", type=int)
     run.add_argument("--out", required=True)
     args = parser.parse_args()
     if args.command == "prepare":
-        result = prepare_cache(args.raw_dir, args.cache)
+        origin = np.asarray(args.origin, dtype=np.float64) if args.origin else ORIGIN
+        shape = tuple(args.shape) if args.shape else SHAPE
+        result = prepare_cache(args.raw_dir, args.cache, origin=origin, shape=shape)
         print(json.dumps(result, indent=2))
     else:
         result = score(args)
