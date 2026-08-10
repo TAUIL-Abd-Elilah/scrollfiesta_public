@@ -118,6 +118,16 @@ def test_rejects_changed_pair_inventory():
         module.compare(baseline, candidate, _index(), _index())
 
 
+def test_collision_gate_count_may_exceed_pair_gate_count():
+    module = _load_script()
+    baseline = _audit((10, 10), (75, 4), status="FAIL", lt2=0.80)
+    candidate = _audit((2, 3), (71, 1), status="PASS", lt2=0.82)
+    result = module.compare(baseline, candidate, _index(), _index())
+    assert result["baseline"]["collisions"] == 79
+    assert result["candidate"]["collisions"] == 72
+    assert result["gates"]["collisions_nonincreasing"]
+
+
 def test_cli_writes_hashed_machine_result(tmp_path, monkeypatch):
     module = _load_script()
     paths = {}

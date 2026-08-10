@@ -105,7 +105,11 @@ def validate_audit(audit: dict[str, Any], label: str) -> dict[tuple[str, str], d
         collide = pair.get("collide")
         if not all(isinstance(v, int) and not isinstance(v, bool) for v in (n, turn, collide)):
             raise ValueError(f"{label} {key}: n/turn_off/collide must be integers")
-        if n <= 0 or not (0 <= turn <= n) or not (0 <= collide <= n):
+        # ``collide`` uses AUDIT_COLLIDE_GATE (5 voxels), while ``n`` and
+        # ``turn_off`` use the narrower configured pair gate (3.5 voxels by
+        # default).  Collision matches can therefore legitimately outnumber
+        # the pair-gated correspondences reported in ``n``.
+        if n <= 0 or not (0 <= turn <= n) or collide < 0:
             raise ValueError(f"{label} {key}: invalid counts")
         for field in ("dphi_med", "du_med", "du_mad", "dv_absmed"):
             _finite_number(pair.get(field), f"{label} {key}.{field}")
